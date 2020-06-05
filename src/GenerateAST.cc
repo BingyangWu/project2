@@ -634,9 +634,13 @@ mykernel generateAST(std::string filename) {
             }
         }
     }
-   
+    std::vector<std::string> gvec;
+    for(int kk=0;kk<tmp;kk++){
+         //std::cout<<"grad to "<<grad[kk]<<std::endl;
+         gvec.push_back(grad[kk]);
+    }
     Group _root=get_kernel_name(name,in,out,d_type,kernel,count,countin,countout);
-    mykernel root(_root,right_expr,grad);
+    mykernel root(_root,right_expr,gvec);
     return root;
 }
 

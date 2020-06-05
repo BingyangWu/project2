@@ -19,8 +19,8 @@ class mykernel{
 public:
     Group kernel;
     std::set<Expr,Expr_compare> right_expr;
-    std::vector<String> grad;
-    mykernel(Group _kernel,std::set<Expr,Expr_compare> _right_expr,std::vector<String> _grad) : kernel(_kernel), right_expr(_right_expr),grad(_grad) {}
+    std::vector<std::string> grad;
+    mykernel(Group _kernel,std::set<Expr,Expr_compare> _right_expr,std::vector<std::string> _grad) : kernel(_kernel), right_expr(_right_expr),grad(_grad) {}
 };
 
 mykernel generateAST(std::string filename);
