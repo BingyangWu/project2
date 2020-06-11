@@ -179,7 +179,7 @@ void IRCCPrinter::visit(Ref<const Move> op) {
 void IRCCPrinter::visit(Ref<const Kernel> op) {
     std::set<std::string> input_set{};
     print_indent();
-    oss << "#include \"../run.h\"\n\n";
+    oss << "#include \"../run2.h\"\n\n";
     oss << "void " << op->name << "(";
     print_arg = true;
     for (size_t i = 0; i < op->inputs.size(); ++i) {

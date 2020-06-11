@@ -262,5 +262,13 @@ Group bound_infer(const Group & origin_kernel, const Group & new_kernel){
     return bm.mutate(new_kernel);
 }
 
+Stmt loop_bound_infer(const Stmt & origin_loop){
+    BoundCollection collect;
+    origin_loop.visit_stmt(&collect);
+
+    BoundModify bm(_bound_infer(collect.bound_info));
+    return bm.mutate(origin_loop); 
+}
+
 }
 }
