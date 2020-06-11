@@ -74,19 +74,17 @@ class getGradVec : public IRVisitor {
 
     void visit(Ref<const Var> op) override {
         if(op->name == gradStr){
-            if(!gradArg.defined()){
-                gradArg = Var::make(op->type(),
-                                    "d" + op->name,
-                                    op->args,
-                                    op->shape);
-            }
+            gradArg.push_back(Var::make(op->type(),
+                                        "d" + op->name,
+                                        op->args,
+                                        op->shape));
             gradVec.push_back(grad_inter[Expr(op)]);
         }
         return;
     }
     
 public:
-    Expr gradArg;
+    vector<Expr> gradArg;
     vector<Expr> gradVec;
     string gradStr;
     getGradVec(const string _gradStr):gradStr(_gradStr){}
@@ -103,19 +101,13 @@ Group toGard(const vector<string> & gradient_vec, const Group & origin_kernel){
         for(string grad : gradient_vec){
             getGradVec gv(grad);
             for_stmt->body_list[0].visit_stmt(&gv);
-            if(gv.gradVec.empty())
-                continue;
-            Stmt begin = LoopNest::make(for_stmt->index_list,
-                                  {Move::make(gv.gradArg, gv.gradVec[0],
-                                              MoveType::LocalToLocal)});
-            updated_stmt_list.push_back(begin);
             size_t size = gv.gradVec.size();
-            for(size_t j = 1; j < size; ++j){
+            for(size_t j = 0; j < size; ++j){
                 updated_stmt_list.push_back(LoopNest::make(for_stmt->index_list,
-                                                           {Move::make(gv.gradArg, 
-                                                                       Binary::make(gv.gradArg.type(),
+                                                           {Move::make(gv.gradArg[j], 
+                                                                       Binary::make(gv.gradArg[j].type(),
                                                                                     BinaryOpType::Add,
-                                                                                    gv.gradArg,
+                                                                                    gv.gradArg[j],
                                                                                     gv.gradVec[j]),
                                                                        MoveType::LocalToLocal)}));
             }
