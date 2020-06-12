@@ -611,7 +611,6 @@ mykernel generateAST(std::string filename) {
     }
     pgrad=pgrad.substr(index+1,xedni-index-1);
     int countgrad=0;
-    int havegrad=false;
     for(int i=0;i<pgrad.length();i++){
         if(pgrad[i]==','){
             countgrad+=1;

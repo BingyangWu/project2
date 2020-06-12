@@ -90,7 +90,7 @@ public:
     getGradVec(const string _gradStr):gradStr(_gradStr){}
 };
 
-Group toGard(const vector<string> & gradient_vec, const Group & origin_kernel){
+Group toGrad(const vector<string> & gradient_vec, const Group & origin_kernel){
     vector<Stmt> updated_stmt_list;
     auto kernel = origin_kernel.as<Kernel>();
     CHECK(kernel, "internal error");

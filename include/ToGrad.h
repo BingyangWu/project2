@@ -8,6 +8,6 @@ using std::vector;
 namespace Boost{
 namespace Internal{
 
-Group toGard(const vector<string> & gradient_vec, const Group & origin_kernel);
+Group toGrad(const vector<string> & gradient_vec, const Group & origin_kernel);
 }
 }
