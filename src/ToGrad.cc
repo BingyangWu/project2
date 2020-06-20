@@ -4,13 +4,11 @@
 #include <map>
 #include "IRVisitor.h"
 #include "IRMutator.h"
-#include "IRPrinter.h"
 
 using std::string;
 using std::vector;
 using std::map;
 using std::pair;
-using std::cout;
 
 namespace Boost{
 namespace Internal{
@@ -132,7 +130,6 @@ class Replace : public IRMutator{
     Expr visit(Ref<const Var> op) override {
         std::vector<Expr> new_args;
         for (auto arg : op->args) {
-            IRPrinter iout;
             Expr _arg = eq(arg, src) ?
                        dst :
                        mutate(arg);
@@ -150,10 +147,39 @@ Expr replace(Expr src, Expr a, Expr b){
     return re.mutate(src);
 }
 
+Stmt replace(Stmt src, Expr a, Expr b){
+    Replace re(a, b);
+    return re.mutate(src);
+}
+
+// 我们不考虑多重%符号重叠
+class FindNeedExpr : public IRVisitor {
+    using IRVisitor::visit;
+
+    void visit(Ref<const Binary> op) override {
+        if(op->op_type == BinaryOpType::Mod){
+            ans.push_back(op);
+            return ;
+        }
+        op->a->visit_node(this);
+        op->b->visit_node(this);
+        return ;
+    }
+
+public:
+    vector<Expr> ans;
+};
+
+vector<Expr> getNeedExpr(Stmt a){
+    FindNeedExpr fn;
+    a.visit_stmt(&fn);
+    return vector<Expr>(fn.ans);
+}
+
 pair<Expr, Expr> getReplace(Expr cal){
     // 此处只考虑操作的第一个运算符不是数字的情况，否则不做操作（会得到能运算但是不符合题意的答案）
     Expr first = cal;
-    Expr item = Index::make(cal.type(), "*", Dom::make(Type::int_scalar(32), 0, 1), IndexType::Spatial);
+    Expr item = Index::make(Type::int_scalar(32), "*", Dom::make(Type::int_scalar(32), 0, 1), IndexType::Spatial);
     Expr second = item;
     while(first.as<Index>() == nullptr){
         auto wrapper = first.as<Binary>();
@@ -161,7 +187,6 @@ pair<Expr, Expr> getReplace(Expr cal){
         if(wrapper->a.node_type() == IRNodeType::IntImm){
             return pair<Expr, Expr>(Expr(), Expr());
         }
-        IRPrinter iouta;
         first = wrapper->a;
         switch (wrapper->op_type)
         {
@@ -210,7 +235,6 @@ Group toGrad(const vector<string> & gradient_vec, const Group & origin_kernel){
                 // 检测gv.gradArg[j]是否存在运算符,产出vector
                 std::vector<Expr> needHandle;
                 for(Expr index : gv.gradArg[j].as<Var>()->args){
-                    IRPrinter iout;
                     if(index.as<Index>() == nullptr){
                         needHandle.push_back(index);
                     }
@@ -219,7 +243,6 @@ Group toGrad(const vector<string> & gradient_vec, const Group & origin_kernel){
                 Expr src = gv.gradVec[j];
                 // 对里面每一项做循环，替换式子
                 for(Expr index : needHandle){
-                    IRPrinter iout;
                     pair<Expr, Expr> replaceItem = getReplace(index);
                     if(replaceItem.first.defined()){
                         dst = replace(dst, index, replaceItem.first);
@@ -228,8 +251,19 @@ Group toGrad(const vector<string> & gradient_vec, const Group & origin_kernel){
                 }
                 src = Binary::make(dst.type(), BinaryOpType::Add, dst, src);
                 Stmt move = Move::make(dst, src, MoveType::LocalToLocal);
-                updated_stmt_list.push_back(LoopNest::make(for_stmt->index_list,
-                                                           {move}));
+                // 替换%，因为和边界无关，所以每一个%都用一个自变量替代，
+                vector<Expr> need_replace = getNeedExpr(move);
+                vector<Expr> index_list(for_stmt->index_list);
+                size_t temp_size = need_replace.size();
+                for(size_t k = 0 ; k < temp_size; ++k){
+                    Expr com_index = Index::make(Type::int_scalar(32), 
+                                                 "com_" + std::to_string(k), 
+                                                 Dom::make(Type::int_scalar(32), 0, 1), 
+                                                 IndexType::Spatial);
+                    index_list.push_back(com_index);
+                    move = replace(move, need_replace[k], com_index);
+                }
+                updated_stmt_list.push_back(LoopNest::make(index_list, {move}));
             }
         }
     }

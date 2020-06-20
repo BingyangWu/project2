@@ -205,7 +205,11 @@ class BoundModify : public IRMutator {
             CHECK(index != nullptr, "loop index type wrong.");
             // std::cout << index->name << " " << var_bound.size() << "\n";
             auto iter = var_bound.find(t);
-            CHECK(iter != var_bound.end(), "internel error.");
+            // project2可能删除一些循环，但未在此处删除，为了实现方便，在此处赋一
+            if(iter == var_bound.end()){
+                updated_index.push_back(Index::make(index_type, index->name, Dom::make(index_type, 0, 1), index->index_type));
+                continue;
+            }
             int min = iter->second.first;
             int max = iter->second.second;
             updated_index.push_back(Index::make(index_type, index->name, Dom::make(index_type, min, max), index->index_type));
