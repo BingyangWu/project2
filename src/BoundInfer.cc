@@ -30,21 +30,32 @@ Type compare_type = Type::int_scalar(32);
 class Expr_compare{
 public:
     bool operator()(const Expr& a, const Expr& b) const {
-        // if(a.node_type() != b.node_type())
-        //     return a.node_type() < b.node_type();
-        // if (a.node_type() == IRNodeType::Binary){
-        //     auto o1 = a.as<Binary>();
-        //     auto o2 = b.as<Binary>();
-        //     if(o1->op_type != o2->op_type)
-        //         return o1->op_type < o2->op_type;
-        //     return operator()(o1->a, o2->a) && operator()(o1->b, o2->b);
-        // } else if (a.node_type() == IRNodeType::Index){
-        //     auto o1 = a.as<Index>();
-        //     auto o2 = b.as<Index>();
-        //     return o1->name < o2->name;
-        // }
+        if(a.node_type() != b.node_type())
+            return a.node_type() < b.node_type();
+        if (a.node_type() == IRNodeType::Binary){
+            auto o1 = a.as<Binary>();
+            auto o2 = b.as<Binary>();
+            if(o1->op_type != o2->op_type)
+                return o1->op_type < o2->op_type;
+            return operator()(o1->a, o2->a) && operator()(o1->b, o2->b);
+        }
+        if (a.node_type() == IRNodeType::Index){
+            auto o1 = a.as<Index>();
+            auto o2 = b.as<Index>();
+            return o1->name < o2->name;
+        }
+        if (a.node_type() == IRNodeType::IntImm){
+            auto o1 = a.as<IntImm>();
+            auto o2 = b.as<IntImm>();
+            return o1->value() < o2->value();
+        }
+        if (a.node_type() == IRNodeType::FloatImm){
+            auto o1 = a.as<FloatImm>();
+            auto o2 = b.as<FloatImm>();
+            return o1->value() < o2->value();
+        }
+        std::cout << a.type() << "\n";
         // CHECK(false, "index should be Index or BinaryOp");
-        // return false;
         return a.real_ptr() < b.real_ptr();
     }
 };
@@ -102,8 +113,10 @@ BoundMap _bound_infer(const BoundMap& bound_info){
             auto wrapper = item.first.as<Binary>();
             int value = 0;
             CHECK(wrapper != nullptr, "index should be Index or BinaryOp");
-            CHECK(!(wrapper->a.node_type() == IRNodeType::IntImm && wrapper->b.node_type() == IRNodeType::IntImm),
-                  "can't have a IntImm index");
+            // project2中有时出现例外，我们不讨论以下情况：
+            if(wrapper->a.node_type() == IRNodeType::IntImm && wrapper->b.node_type() == IRNodeType::IntImm){
+                continue;
+            }
             switch (wrapper->op_type){
             case BinaryOpType::Add :
                 if(wrapper->a.node_type() != IRNodeType::IntImm && wrapper->b.node_type() != IRNodeType::IntImm){
@@ -120,8 +133,10 @@ BoundMap _bound_infer(const BoundMap& bound_info){
                 }
                 break;
             case BinaryOpType::Sub :
-                CHECK(wrapper->a.node_type() == IRNodeType::IntImm || wrapper->b.node_type() == IRNodeType::IntImm,
-                      "can't deal with var - var.")
+                // project2中有时会进入此分支，我们不讨论以下情况：
+                if(wrapper->a.node_type() != IRNodeType::IntImm && wrapper->b.node_type() != IRNodeType::IntImm){
+                    break;
+                }
                 if(wrapper->a.node_type() == IRNodeType::IntImm){
                     value = wrapper->a.as<IntImm>()->value();
                     updated(ans, wrapper->b, value - min, value - max);
@@ -131,8 +146,10 @@ BoundMap _bound_infer(const BoundMap& bound_info){
                 }
                 break;
             case BinaryOpType::Mul :
-                CHECK(wrapper->a.node_type() == IRNodeType::IntImm || wrapper->b.node_type() == IRNodeType::IntImm,
-                      "can't deal with var * var.")
+                // project2中有时会进入此分支，我们不讨论以下情况：
+                if(wrapper->a.node_type() != IRNodeType::IntImm && wrapper->b.node_type() != IRNodeType::IntImm){
+                    break;
+                }
                 if(wrapper->a.node_type() == IRNodeType::IntImm){
                     value = wrapper->a.as<IntImm>()->value();
                     updated(ans, wrapper->b, floor(min * 1.0 / value), ceil(max * 1.0 / value));
@@ -142,8 +159,10 @@ BoundMap _bound_infer(const BoundMap& bound_info){
                 }
                 break;
             case BinaryOpType::Div :
-                CHECK(wrapper->a.node_type() == IRNodeType::IntImm || wrapper->b.node_type() == IRNodeType::IntImm,
-                      "can't deal with var / var.")
+                // project2中有时会进入此分支，我们不讨论以下情况：
+                if(wrapper->a.node_type() != IRNodeType::IntImm && wrapper->b.node_type() != IRNodeType::IntImm){
+                    break;
+                }
                 if(wrapper->a.node_type() == IRNodeType::IntImm){
                     value = wrapper->a.as<IntImm>()->value();
                     updated(ans, wrapper->b, floor(value * 1.0 / min), ceil(value * 1.0 / max));
@@ -153,8 +172,10 @@ BoundMap _bound_infer(const BoundMap& bound_info){
                 }
                 break;
             case BinaryOpType::Mod :
-                CHECK((wrapper->a.node_type() == IRNodeType::IntImm || wrapper->b.node_type() == IRNodeType::IntImm),
-                      "can't deal with var mod var.")
+                // project2中有时会进入此分支，我们不讨论以下情况：
+                if(wrapper->a.node_type() != IRNodeType::IntImm && wrapper->b.node_type() != IRNodeType::IntImm){
+                    break;
+                }
                 if(wrapper->a.node_type() == IRNodeType::IntImm){
                     updated(ans, wrapper->b, min < 0 ? min - 1 : min, max > 0 ? max + 1 : max);
                 }
@@ -183,6 +204,7 @@ class BoundModify : public IRMutator {
             // 存疑
             auto index = t.as<Index>();
             CHECK(index != nullptr, "loop index type wrong.");
+            std::cout << index->name << " " << var_bound.size() << "\n";
             auto iter = var_bound.find(t);
             CHECK(iter != var_bound.end(), "internel error.");
             int min = iter->second.first;

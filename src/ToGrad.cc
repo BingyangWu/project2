@@ -3,10 +3,14 @@
 #include <vector>
 #include <map>
 #include "IRVisitor.h"
+#include "IRMutator.h"
+#include "IRPrinter.h"
 
 using std::string;
 using std::vector;
 using std::map;
+using std::pair;
+using std::cout;
 
 namespace Boost{
 namespace Internal{
@@ -14,7 +18,22 @@ namespace Internal{
 class Expr_compare{
 public:
     bool operator()(const Expr& a, const Expr& b) const {
-        return a.real_ptr() < b.real_ptr();
+        if(a.node_type() != b.node_type())
+            return a.node_type() < b.node_type();
+        if (a.node_type() == IRNodeType::Binary){
+            auto o1 = a.as<Binary>();
+            auto o2 = b.as<Binary>();
+            if(o1->op_type != o2->op_type)
+                return o1->op_type < o2->op_type;
+            return operator()(o1->a, o2->a) && operator()(o1->b, o2->b);
+        }
+        if (a.node_type() == IRNodeType::Index){
+            auto o1 = a.as<Index>();
+            auto o2 = b.as<Index>();
+            return o1->name < o2->name;
+        }
+        CHECK(false, "index should be Index or BinaryOp");
+        return false;
     }
 };
 
@@ -90,6 +109,82 @@ public:
     getGradVec(const string _gradStr):gradStr(_gradStr){}
 };
 
+class Replace : public IRMutator{
+    using IRMutator::visit;
+    Expr src;
+    Expr dst;
+    Expr_compare com;
+
+    bool eq(const Expr a, const Expr b){
+        return !com(a, b) && !com(b, a);
+    }
+
+    Expr visit(Ref<const Binary> op) override {
+        Expr a = eq(op->a, src) ?
+                 dst :
+                 mutate(op->a);
+        Expr b = eq(op->b, src) ?
+                 dst :
+                 mutate(op->b);
+        return Binary::make(op->type(), op->op_type, a, b);
+    }
+
+    Expr visit(Ref<const Var> op) override {
+        std::vector<Expr> new_args;
+        for (auto arg : op->args) {
+            IRPrinter iout;
+            Expr _arg = eq(arg, src) ?
+                       dst :
+                       mutate(arg);
+            new_args.push_back(_arg);
+        }
+        return Var::make(op->type(), op->name, new_args, op->shape);
+    }
+
+public:
+    Replace(Expr _src, Expr _dst):src(_src), dst(_dst){}
+};
+
+Expr replace(Expr src, Expr a, Expr b){
+    Replace re(a, b);
+    return re.mutate(src);
+}
+
+pair<Expr, Expr> getReplace(Expr cal){
+    // 此处只考虑操作的第一个运算符不是数字的情况，否则不做操作（会得到能运算但是不符合题意的答案）
+    Expr first = cal;
+    Expr item = Index::make(cal.type(), "*", Dom::make(Type::int_scalar(32), 0, 1), IndexType::Spatial);
+    Expr second = item;
+    while(first.as<Index>() == nullptr){
+        auto wrapper = first.as<Binary>();
+        CHECK(wrapper != nullptr, "index should be Index or BinaryOp");
+        if(wrapper->a.node_type() == IRNodeType::IntImm){
+            return pair<Expr, Expr>(Expr(), Expr());
+        }
+        IRPrinter iouta;
+        first = wrapper->a;
+        switch (wrapper->op_type)
+        {
+        case BinaryOpType::Add:
+            second = Binary::make(first->type(), BinaryOpType::Sub, second, wrapper->b);
+            break;
+        case BinaryOpType::Sub:
+            second = Binary::make(first->type(), BinaryOpType::Add, second, wrapper->b);
+            break;
+        case BinaryOpType::Mul:
+            second = Binary::make(first->type(), BinaryOpType::Div, second, wrapper->b);
+            break;
+        case BinaryOpType::Div:
+            second = Binary::make(first->type(), BinaryOpType::Mul, second, wrapper->b);
+            break;
+        default:
+            // other Op we cannot handle
+            return pair<Expr, Expr>(Expr(), Expr());
+        }
+    }
+    return pair<Expr, Expr>(first, replace(second, item, first));
+}
+
 Group toGrad(const vector<string> & gradient_vec, const Group & origin_kernel){
     vector<Stmt> updated_stmt_list;
     auto kernel = origin_kernel.as<Kernel>();
@@ -103,13 +198,29 @@ Group toGrad(const vector<string> & gradient_vec, const Group & origin_kernel){
             for_stmt->body_list[0].visit_stmt(&gv);
             size_t size = gv.gradVec.size();
             for(size_t j = 0; j < size; ++j){
+                // 检测gv.gradArg[j]是否存在运算符,产出vector
+                std::vector<Expr> needHandle;
+                for(Expr index : gv.gradArg[j].as<Var>()->args){
+                    IRPrinter iout;
+                    if(index.as<Index>() == nullptr){
+                        needHandle.push_back(index);
+                    }
+                }
+                Expr dst = gv.gradArg[j];
+                Expr src = gv.gradVec[j];
+                // 对里面每一项做循环，替换式子
+                for(Expr index : needHandle){
+                    IRPrinter iout;
+                    pair<Expr, Expr> replaceItem = getReplace(index);
+                    if(replaceItem.first.defined()){
+                        dst = replace(dst, index, replaceItem.first);
+                        src = replace(src, replaceItem.first, replaceItem.second);
+                    }
+                }
+                src = Binary::make(dst.type(), BinaryOpType::Add, dst, src);
+                Stmt move = Move::make(dst, src, MoveType::LocalToLocal);
                 updated_stmt_list.push_back(LoopNest::make(for_stmt->index_list,
-                                                           {Move::make(gv.gradArg[j], 
-                                                                       Binary::make(gv.gradArg[j].type(),
-                                                                                    BinaryOpType::Add,
-                                                                                    gv.gradArg[j],
-                                                                                    gv.gradVec[j]),
-                                                                       MoveType::LocalToLocal)}));
+                                                           {move}));
             }
         }
     }
