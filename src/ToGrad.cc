@@ -175,10 +175,19 @@ pair<Expr, Expr> getReplace(Expr cal){
             second = Binary::make(first->type(), BinaryOpType::Div, second, wrapper->b);
             break;
         case BinaryOpType::Div:
-            second = Binary::make(first->type(), BinaryOpType::Mul, second, wrapper->b);
+            second = Binary::make(first->type(), 
+                                  BinaryOpType::Add,
+                                  Binary::make(first->type(),
+                                               BinaryOpType::Mul,
+                                               second,
+                                               wrapper->b),
+                                  Binary::make(first->type(),
+                                               BinaryOpType::Mod,
+                                               second,
+                                               wrapper->b));
             break;
         default:
-            // other Op we cannot handle
+            // leave % later
             return pair<Expr, Expr>(Expr(), Expr());
         }
     }

@@ -54,7 +54,6 @@ public:
             auto o2 = b.as<FloatImm>();
             return o1->value() < o2->value();
         }
-        std::cout << a.type() << "\n";
         // CHECK(false, "index should be Index or BinaryOp");
         return a.real_ptr() < b.real_ptr();
     }
@@ -204,7 +203,7 @@ class BoundModify : public IRMutator {
             // 存疑
             auto index = t.as<Index>();
             CHECK(index != nullptr, "loop index type wrong.");
-            std::cout << index->name << " " << var_bound.size() << "\n";
+            // std::cout << index->name << " " << var_bound.size() << "\n";
             auto iter = var_bound.find(t);
             CHECK(iter != var_bound.end(), "internel error.");
             int min = iter->second.first;
